@@ -75,6 +75,11 @@ async def method_loop(exchange, method, symbols, path):
 
 
 async def exchange_loop(exchange_id, methods, path):
+
+    path = os.path.join(path, exchange_id)
+    if not os.path.exists(path):
+        os.mkdir(path)
+
     print('Starting', exchange_id, methods)
     exchange = getattr(ccxtpro, exchange_id)()
     exchange.options.update({ 'rateLimit': 10, 'watchOrderBook': { 'depth': 'books' }})
@@ -92,6 +97,14 @@ async def main():
         'okx': {
             'watchOrderBook': ['BTC/USDT:USDT'],
             'watchTrades': ['BTC/USDT:USDT'],
+        },
+        'bitfinex': {
+            'watchOrderBook': ['BTC/USD'],
+            'watchTrades': ['BTC/USD'],
+        },
+        'ftx': {
+            'watchOrderBook': ['BTC/USD:USD'],
+            'watchTrades': ['BTC/USD:USD'],
         },
     }
 

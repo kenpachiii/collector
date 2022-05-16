@@ -89,7 +89,7 @@ async def exchange_loop(exchange_id, methods, path):
 
 async def main():
 
-    save_path = os.path.join(os.getcwd(), 'data')
+    save_path = os.path.join(os.getcwd(), '/mnt/volume_ams3_01/data')
     if not os.path.exists(save_path):
         os.mkdir(save_path)
 

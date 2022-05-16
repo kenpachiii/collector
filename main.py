@@ -63,7 +63,7 @@ async def symbol_loop(exchange, method, symbol, path):
 
             print(e)
 
-            send_sms(f'{iso8601}\n\nSymbol loop error')
+            # send_sms(f'{iso8601}\n\nSymbol loop error')
 
             if type(e).__name__ == 'NetworkError':
                 raise ccxtpro.NetworkError(e)

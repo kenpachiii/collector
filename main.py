@@ -56,12 +56,12 @@ async def symbol_loop(exchange, method, symbol, path):
             iso8601 = exchange.iso8601(now)
             if method == 'watchOrderBook':
                 await save_data(path, iso8601, method, response)
-                print(iso8601, exchange.id, method, symbol)
             elif method == 'watchTrades':
                 await save_data(path, iso8601, method, response)
-                print(iso8601, exchange.id, method, symbol)
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
+
+            print(e)
 
             send_sms(f'{iso8601}\n\nSymbol loop error')
 

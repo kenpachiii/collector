@@ -45,7 +45,7 @@ def save_data(iso8601, path, method, data):
             f.write(bytes)
 
     except Exception as e:
-        print(type(e))
+        print(e)
         send_sms(f'Failed writing file')
 
 async def symbol_loop(exchange, method, symbol, path):
@@ -58,7 +58,7 @@ async def symbol_loop(exchange, method, symbol, path):
         try:
             response = await getattr(exchange, method)(symbol)
             if method == 'watchOrderBook':
-                iso8601 = response.get(symbol).get('datetime')
+                iso8601 = response.get('datetime')
                 save_data(iso8601, path, method, response)
             elif method == 'watchTrades':
 
@@ -71,6 +71,7 @@ async def symbol_loop(exchange, method, symbol, path):
                     if iso8601 not in trade_map:
 
                         for k, v in trade_map.items():
+
                             v = sorted(v, key=lambda d: d['id'])
                             save_data(iso8601, path, method, v)
 
@@ -78,7 +79,7 @@ async def symbol_loop(exchange, method, symbol, path):
                         trade_map[iso8601] = [item]
 
                         continue
-
+                    
                     trade_map[iso8601].append(item)
              
                 exchange.trades[symbol].clear()
@@ -98,7 +99,7 @@ async def method_loop(exchange, method, symbols, path):
     await gather(*loops)
 
 
-async def exchange_loop(exchange_id, methods, path, config={}):
+async def exchange_loop(exchange_id, methods, path):
 
     path = os.path.join(path, exchange_id)
     if not os.path.exists(path):
@@ -106,8 +107,10 @@ async def exchange_loop(exchange_id, methods, path, config={}):
 
     print('Starting', exchange_id, methods)
     exchange = getattr(ccxtpro, exchange_id)()
-    for attr, value in config.items():
-        setattr(exchange, attr, value)
+    exchange.options.update({ 
+            'rateLimit': 10, 
+            'watchOrderBook': { 'depth': 'books' }
+        })
     loops = [method_loop(exchange, method, symbols, path) for method, symbols in methods.items()]
     await gather(*loops)
     await exchange.close()
@@ -118,29 +121,24 @@ async def main():
     if not os.path.exists(save_path):
         os.mkdir(save_path)
 
-    config = {
-        'okx': { 'rateLimit': 10, 'watchOrderBook': { 'depth': 'books' }},
-        'bitfinex': { 'rateLimit': 10 },
-        'ftx': { 'rateLimit': 10 }
-    }
-
     exchanges = {
         'okx': {
             'watchOrderBook': ['BTC/USDT:USDT'],
             'watchTrades': ['BTC/USDT:USDT'],
         },
-        'bitfinex': {
-            'watchOrderBook': ['BTC/USD'],
-            'watchTrades': ['BTC/USD'],
-        },
+        # 'bitfinex': {
+        #     'watchOrderBook': ['BTC/USD'],
+        #     'watchTrades': ['BTC/USD'],
+        # },
         'ftx': {
             'watchOrderBook': ['BTC/USD:USD'],
             'watchTrades': ['BTC/USD:USD'],
         },
     }
 
-    loops = [exchange_loop(exchange_id, methods, save_path, config.get(exchange_id, {})) for exchange_id, methods in exchanges.items()]
+    loops = [exchange_loop(exchange_id, methods, save_path) for exchange_id, methods in exchanges.items()]
     loops.append(size_monitor(save_path))
     await gather(*loops)
     
 run(main())
+

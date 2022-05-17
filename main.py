@@ -5,6 +5,8 @@ import aiofiles
 import zlib
 import base64
 import json
+import time
+from datetime import datetime
 
 from sms import send_sms
 
@@ -23,41 +25,63 @@ async def size_monitor(path):
 
     while True:
 
-        await sleep(60)
+        await sleep(42300)
 
         size = directory_size(path)
-        if size > 10 * (1000**3):
-            send_sms(f'Reaching storage limit {size / (1000**3)}g')
+        
+        send_sms(f'Storage capacity at {size / (1000**3)}g')
 
-async def save_data(path, iso8601, method, data):
+def save_data(iso8601, path, method, data):
 
     try:
 
         filename = '-'.join([method, iso8601])
-        async with aiofiles.open(os.path.join(path, filename), mode='w') as f:
+        with open(os.path.join(path, '.'.join([filename, 'zlib'])), mode='w') as f:
             bytes = base64.b64encode(
                 zlib.compress(
                     json.dumps(data).encode('utf-8')
                 )
             ).decode('ascii')
-            await f.write(bytes)
+            f.write(bytes)
 
     except Exception as e:
-        print(e)
-        send_sms(f'{iso8601}\n\nFailed writing file')
+        print(type(e))
+        send_sms(f'Failed writing file')
 
 async def symbol_loop(exchange, method, symbol, path):
 
+    trade_map: dict = {}
+
     print('Starting', exchange.id, method, symbol)
     while True:
+
         try:
             response = await getattr(exchange, method)(symbol)
-            now = exchange.milliseconds()
-            iso8601 = exchange.iso8601(now)
             if method == 'watchOrderBook':
-                await save_data(path, iso8601, method, response)
+                iso8601 = response.get(symbol).get('datetime')
+                save_data(iso8601, path, method, response)
             elif method == 'watchTrades':
-                await save_data(path, iso8601, method, response)
+
+                for item in response:
+
+                    if 'info' in item:
+                        del item['info']
+
+                    iso8601 = item.get('datetime')
+                    if iso8601 not in trade_map:
+
+                        for k, v in trade_map.items():
+                            v = sorted(v, key=lambda d: d['id'])
+                            save_data(iso8601, path, method, v)
+
+                        trade_map.clear()
+                        trade_map[iso8601] = [item]
+
+                        continue
+
+                    trade_map[iso8601].append(item)
+             
+                exchange.trades[symbol].clear()
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
 
@@ -74,7 +98,7 @@ async def method_loop(exchange, method, symbols, path):
     await gather(*loops)
 
 
-async def exchange_loop(exchange_id, methods, path):
+async def exchange_loop(exchange_id, methods, path, config={}):
 
     path = os.path.join(path, exchange_id)
     if not os.path.exists(path):
@@ -82,16 +106,23 @@ async def exchange_loop(exchange_id, methods, path):
 
     print('Starting', exchange_id, methods)
     exchange = getattr(ccxtpro, exchange_id)()
-    exchange.options.update({ 'rateLimit': 10, 'watchOrderBook': { 'depth': 'books' }})
+    for attr, value in config.items():
+        setattr(exchange, attr, value)
     loops = [method_loop(exchange, method, symbols, path) for method, symbols in methods.items()]
     await gather(*loops)
     await exchange.close()
 
 async def main():
 
-    save_path = os.path.join(os.getcwd(), '/mnt/volume_ams3_01/data')
+    save_path = os.path.join(os.getcwd(), 'data')
     if not os.path.exists(save_path):
         os.mkdir(save_path)
+
+    config = {
+        'okx': { 'rateLimit': 10, 'watchOrderBook': { 'depth': 'books' }},
+        'bitfinex': { 'rateLimit': 10 },
+        'ftx': { 'rateLimit': 10 }
+    }
 
     exchanges = {
         'okx': {
@@ -108,7 +139,7 @@ async def main():
         },
     }
 
-    loops = [exchange_loop(exchange_id, methods, save_path) for exchange_id, methods in exchanges.items()]
+    loops = [exchange_loop(exchange_id, methods, save_path, config.get(exchange_id, {})) for exchange_id, methods in exchanges.items()]
     loops.append(size_monitor(save_path))
     await gather(*loops)
     

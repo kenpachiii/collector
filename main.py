@@ -5,7 +5,7 @@ import time
 import logging
 
 from datetime import datetime
-from asyncio import gather, run
+from asyncio import gather, run, sleep
 from sms import send_sms
 
 FORMAT= '%(asctime)s - %(levelname)s - %(message)s'
@@ -15,7 +15,7 @@ class OrderBook:
     def __init__(self, object: dict):
         self.bids: list = object.get('bids').copy()
         self.asks: list = object.get('asks').copy()
-        self.timestamp: int = object.get('timestamp')
+        self.timestamp: int = object.get('timestamp') or int(time.time() * 1000)
 
     def format(self):
 
@@ -33,7 +33,7 @@ class Trade:
         self.price: float = object.get('price')
         self.amount: float = object.get('amount')
         self.side: str = object.get('side')
-        self.timestamp: int = object.get('timestamp')
+        self.timestamp: int = object.get('timestamp') or int(time.time() * 1000)
 
     def format(self):
         return 'id:{};price:{};amount:{};side:{};timestamp:{}\n'.format(self.id, self.price, self.amount, self.side, self.timestamp).encode()
@@ -65,10 +65,11 @@ async def size_monitor(path):
 
     while True:
 
+        await sleep(0)
         if time.time() % 86400 == 0:      
             send_sms(f'Storage capacity at {directory_size(path) / (1000**3)}')
 
-def compress_data(filename):
+def compress_data(id, filename):
     try:
 
         with open(filename, 'rb') as f:
@@ -85,12 +86,12 @@ def compress_data(filename):
         os.remove(filename)
 
     except Exception as e:
-        logging.error('compress data - {}'.format(str(e)))
+        logging.error('{} - compress data - {}'.format(id, str(e)))
 
         send_sms('{}\n\nProblem compressing file'.format(program_time()))
         raise e
 
-def save_data(path, data):
+def save_data(id, path, data):
 
     try:
 
@@ -103,14 +104,14 @@ def save_data(path, data):
             content = os.scandir(path)
             for entry in content:
                 if entry.is_file() and 'lzma' not in entry.name:
-                    compress_data(entry.path)
+                    compress_data(id, entry.path)
 
         with open(os.path.join(path, filename), 'ab') as f:
             f.write(data.format())
             f.close()
 
     except Exception as e:
-        logging.error('save data - {}'.format(str(e)))
+        logging.error('{} - save data - {}'.format(id, str(e)))
 
         send_sms('{}\n\nProblem saving file'.format(program_time()))
         raise e
@@ -124,16 +125,20 @@ async def symbol_loop(exchange, method, symbol, path):
         try:
             response = await getattr(exchange, method)(symbol)
             if method == 'watchOrderBook':
-                save_data(path, OrderBook(response))
+
+                if exchange.id == 'bitfinex':
+                    print(response)
+
+                save_data(exchange.id, path, OrderBook(response))
             elif method == 'watchTrades':
 
                 for item in response:
-                    save_data(path, Trade(item))
+                    save_data(exchange.id, path, Trade(item))
                 exchange.trades[symbol].clear()
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
 
-            logging.error('symbol loop - {}'.format(str(e)))
+            logging.error('{} - symbol loop - {}'.format(exchange.id, str(e)))
 
             if type(e).__name__ == 'ExchangeError' or type(e).__name__ == 'Exception':
 
@@ -176,7 +181,7 @@ async def exchange_loop(exchange_id, methods, path, config = {}):
 
 async def main():
 
-    save_path = os.path.join(os.getcwd(), 'data/')
+    save_path = os.path.join(os.getcwd(), '/mnt/volume_ams3_01/data/')
     if not os.path.exists(save_path):
         os.mkdir(save_path)
 
@@ -193,15 +198,7 @@ async def main():
         'okx': {
             'watchOrderBook': ['BTC/USDT:USDT'],
             'watchTrades': ['BTC/USDT:USDT'],
-        },
-        'bitfinex': {
-            'watchOrderBook': ['BTC/USD'],
-            'watchTrades': ['BTC/USD'],
-        },
-        'ftx': {
-            'watchOrderBook': ['BTC/USD:USD'],
-            'watchTrades': ['BTC/USD:USD'],
-        },
+        }
     }
 
     loops = [exchange_loop(exchange_id, methods, save_path, config.get(exchange_id, {})) for exchange_id, methods in exchanges.items()]

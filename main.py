@@ -55,7 +55,7 @@ def ymd(timestamp):
 
 def seconds_until_midnight() -> int:
    now = datetime.utcnow()
-   midnight = datetime.combine(now + timedelta(days=1), time())
+   midnight = datetime.combine(now + timedelta(days=1), datetime.time())
 
    return (midnight - now).seconds
 

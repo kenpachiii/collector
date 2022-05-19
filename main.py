@@ -11,6 +11,8 @@ from sms import send_sms
 FORMAT= '%(asctime)s - %(levelname)s - %(message)s'
 logging.basicConfig(format=FORMAT,level=logging.INFO)
 
+DIRECTORY = './data/'
+
 class OrderBook:
     def __init__(self, object: dict):
         self.bids: list = object.get('bids').copy()
@@ -61,14 +63,6 @@ def directory_size(path):
                 total += directory_size(entry.path)
     return total
 
-async def size_monitor(path):
-
-    while True:
-
-        await sleep(0)
-        if time.time() % 86400 == 0:      
-            send_sms(f'Storage capacity at {directory_size(path) / (1000**3)}')
-
 def compress_data(id, filename):
     try:
 
@@ -80,6 +74,8 @@ def compress_data(id, filename):
                 lz.close()
 
                 logging.info('Saved {} {} bytes'.format(os.path.basename(compressed_file), os.path.getsize(compressed_file)))
+                
+                send_sms(f'Storage capacity at {directory_size(DIRECTORY) / (1000**3)}')
 
             f.close()
 
@@ -103,7 +99,7 @@ def save_data(id, path, data):
 
             content = os.scandir(path)
             for entry in content:
-                if entry.is_file() and 'lzma' not in entry.name and ymd((int(time.time() * 1000))) not in entry.name:
+                if entry.is_file() and 'lzma' not in entry.name and ymd(int(time.time() * 1000)) not in entry.name:
                     compress_data(id, entry.path)
 
         with open(os.path.join(path, filename), 'ab') as f:
@@ -181,7 +177,7 @@ async def exchange_loop(exchange_id, methods, path, config = {}):
 
 async def main():
 
-    save_path = os.path.join(os.getcwd(), './data/')
+    save_path = os.path.join(os.getcwd(), DIRECTORY)
     if not os.path.exists(save_path):
         os.mkdir(save_path)
 
@@ -202,7 +198,6 @@ async def main():
     }
 
     loops = [exchange_loop(exchange_id, methods, save_path, config.get(exchange_id, {})) for exchange_id, methods in exchanges.items()]
-    loops.append(size_monitor(save_path))
     await gather(*loops)
     
 run(main())

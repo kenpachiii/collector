@@ -12,9 +12,7 @@ from sms import send_sms
 FORMAT= '%(asctime)s - %(levelname)s - %(message)s'
 logging.basicConfig(format=FORMAT,level=logging.INFO)
 
-# DIRECTORY = '/mnt/volume_ams3_01/'
-
-DIRECTORY = './date'
+DIRECTORY = '/mnt/volume_ams3_01/'
 
 class OrderBook:
     def __init__(self, object: dict):

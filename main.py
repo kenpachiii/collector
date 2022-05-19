@@ -5,14 +5,16 @@ import time
 import datetime
 import logging
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from asyncio import gather, run, sleep
 from sms import send_sms
 
 FORMAT= '%(asctime)s - %(levelname)s - %(message)s'
 logging.basicConfig(format=FORMAT,level=logging.INFO)
 
-DIRECTORY = '/mnt/volume_ams3_01/'
+# DIRECTORY = '/mnt/volume_ams3_01/'
+
+DIRECTORY = './date'
 
 class OrderBook:
     def __init__(self, object: dict):
@@ -53,11 +55,9 @@ def ymd(timestamp):
     utc_datetime = datetime.utcfromtimestamp(int(round(timestamp / 1000)))
     return utc_datetime.strftime('%Y-%m-%d')
 
-def seconds_until_midnight() -> int:
-   now = datetime.utcnow()
-   midnight = datetime.combine(now + timedelta(days=1), datetime.time())
-
-   return (midnight - now).seconds
+def seconds_until_midnight():
+    n = datetime.utcnow()
+    return ((24 - n.hour - 1) * 60 * 60) + ((60 - n.minute - 1) * 60) + (60 - n.second)
 
 def directory_size(path):
 
@@ -179,3 +179,5 @@ async def main():
     await gather(*loops)
     
 run(main())
+
+

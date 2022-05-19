@@ -2,9 +2,10 @@ import os
 import ccxtpro
 import lzma
 import time
+import datetime
 import logging
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from asyncio import gather, run, sleep
 from sms import send_sms
 
@@ -52,6 +53,12 @@ def ymd(timestamp):
     utc_datetime = datetime.utcfromtimestamp(int(round(timestamp / 1000)))
     return utc_datetime.strftime('%Y-%m-%d')
 
+def seconds_until_midnight() -> int:
+   now = datetime.utcnow()
+   midnight = datetime.combine(now + timedelta(days=1), time())
+
+   return (midnight - now).seconds
+
 def directory_size(path):
 
     total = 0
@@ -66,11 +73,8 @@ def directory_size(path):
 async def watch_storage_space():
 
     while True:
-        await sleep(60)
-        content = os.scandir(DIRECTORY)
-        for entry in content:
-            if ymd(int(time.time() * 1000)) not in entry.name:
-                send_sms(f'Storage capacity at {directory_size(DIRECTORY) / (1000**3)}')
+        await sleep(seconds_until_midnight())
+        send_sms(f'Storage capacity at {directory_size(DIRECTORY) / (1000**3)}')
 
 def save_data(id, path, data):
 

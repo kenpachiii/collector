@@ -79,7 +79,7 @@ def compress_data(id, filename):
                 lz.write(f.read())
                 lz.close()
 
-                logging.info('Saved {} {} bytes'.format(compressed_file, os.path.getsize(compressed_file)))
+                logging.info('Saved {} {} bytes'.format(os.path.basename(compressed_file), os.path.getsize(compressed_file)))
 
             f.close()
 
@@ -99,11 +99,11 @@ def save_data(id, path, data):
         filename = os.path.join(path, ymd(timestamp))
 
         # when date changes compress previous days data if it exists
-        if not os.path.exists(filename) and ymd(int(time.time() * 1000)) not in filename:
+        if not os.path.exists(filename):
 
             content = os.scandir(path)
             for entry in content:
-                if entry.is_file() and 'lzma' not in entry.name:
+                if entry.is_file() and 'lzma' not in entry.name and ymd((int(time.time() * 1000))) not in entry.name:
                     compress_data(id, entry.path)
 
         with open(os.path.join(path, filename), 'ab') as f:
@@ -181,7 +181,7 @@ async def exchange_loop(exchange_id, methods, path, config = {}):
 
 async def main():
 
-    save_path = os.path.join(os.getcwd(), '/mnt/volume_ams3_01/data/')
+    save_path = os.path.join(os.getcwd(), './data/')
     if not os.path.exists(save_path):
         os.mkdir(save_path)
 

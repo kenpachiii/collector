@@ -63,46 +63,23 @@ def directory_size(path):
                 total += directory_size(entry.path)
     return total
 
-def compress_data(id, filename):
-    try:
+async def watch_storage_space():
 
-        with open(filename, 'rb') as f:
-
-            compressed_file = '.'.join([filename, 'lzma'])
-            with lzma.open(compressed_file, 'wb') as lz:
-                lz.write(f.read())
-                lz.close()
-
-                logging.info('Saved {} {} bytes'.format(os.path.basename(compressed_file), os.path.getsize(compressed_file)))
-                
+    while True:
+        await sleep(60)
+        content = os.scandir(DIRECTORY)
+        for entry in content:
+            if ymd(int(time.time() * 1000)) not in entry.name:
                 send_sms(f'Storage capacity at {directory_size(DIRECTORY) / (1000**3)}')
-
-            f.close()
-
-        os.remove(filename)
-
-    except Exception as e:
-        logging.error('{} - compress data - {}'.format(id, str(e)))
-
-        send_sms('{}\n\nProblem compressing file'.format(program_time()))
-        raise e
 
 def save_data(id, path, data):
 
     try:
 
         timestamp = data.timestamp
-        filename = os.path.join(path, ymd(timestamp))
+        filename = '.'.join([os.path.join(path, ymd(timestamp)), 'lzma'])
 
-        # when date changes compress previous days data if it exists
-        if not os.path.exists(filename):
-
-            content = os.scandir(path)
-            for entry in content:
-                if entry.is_file() and 'lzma' not in entry.name and ymd(int(time.time() * 1000)) not in entry.name:
-                    compress_data(id, entry.path)
-
-        with open(os.path.join(path, filename), 'ab') as f:
+        with lzma.open(filename, 'ab') as f:
             f.write(data.format())
             f.close()
 
@@ -121,10 +98,6 @@ async def symbol_loop(exchange, method, symbol, path):
         try:
             response = await getattr(exchange, method)(symbol)
             if method == 'watchOrderBook':
-
-                if exchange.id == 'bitfinex':
-                    print(response)
-
                 save_data(exchange.id, path, OrderBook(response))
             elif method == 'watchTrades':
 
@@ -198,6 +171,7 @@ async def main():
     }
 
     loops = [exchange_loop(exchange_id, methods, save_path, config.get(exchange_id, {})) for exchange_id, methods in exchanges.items()]
+    loops.append(watch_storage_space())
     await gather(*loops)
     
 run(main())

@@ -4,6 +4,7 @@ import lzma
 import time
 import datetime
 import logging
+import struct
 
 from datetime import datetime
 from asyncio import gather, run, sleep
@@ -22,13 +23,17 @@ class OrderBook:
 
     def format(self):
 
+        bids += b''
         for i in range(0, len(self.bids)):
-            self.bids[i] = '{} {}'.format(self.bids[i][0], self.bids[i][1]) 
-
+            packed = struct.pack('i' * len(self.bids[i]) , *self.bids[i])
+            bids += packed
+ 
+        asks += b''
         for i in range(0, len(self.asks)):
-            self.asks[i] = '{} {}'.format(self.asks[i][0], self.asks[i][1]) 
+            packed = struct.pack('i' * len(self.asks[i]) , *self.asks[i])
+            asks += packed
 
-        return 'timestamp:{};bids:{};asks:{}\n'.format(self.timestamp, ','.join(self.bids), ','.join(self.asks)).encode()
+        return 'timestamp:{};bids:{};asks:{}\n'.format(self.timestamp, ','.join(bids), ','.join(asks)).encode()
 
 class Trade:
     def __init__(self, object: dict):
@@ -109,10 +114,13 @@ async def symbol_loop(exchange, method, symbol, path):
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
 
-            logging.error('{} - symbol loop - {}'.format(exchange.id, str(e)))
+            if type(e).__name__ == 'NetworkError':
+
+                logging.warning('{} - symbol loop - {}'.format(exchange.id, str(e)))
 
             if type(e).__name__ == 'ExchangeError' or type(e).__name__ == 'Exception':
 
+                logging.error('{} - symbol loop - {}'.format(exchange.id, str(e)))
                 send_sms('{}\n\nProblem watching {} {}'.format(program_time(), exchange.id, method))
 
                 raise e

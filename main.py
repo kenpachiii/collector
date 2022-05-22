@@ -5,15 +5,17 @@ import time
 import datetime
 import logging
 import struct
+import codec
 
 from datetime import datetime
 from asyncio import gather, run, sleep
 from sms import send_sms
 
-FORMAT= '%(asctime)s - %(levelname)s - %(message)s'
-logging.basicConfig(format=FORMAT,level=logging.INFO)
+FORMAT = '%(asctime)s - %(levelname)s - %(message)s'
+logging.basicConfig(format=FORMAT, level=logging.INFO)
 
 DIRECTORY = '/mnt/volume_ams3_01/'
+
 
 class OrderBook:
     def __init__(self, object: dict):
@@ -21,19 +23,29 @@ class OrderBook:
         self.asks: list = object.get('asks').copy()
         self.timestamp: int = object.get('timestamp') or int(time.time() * 1000)
 
-    def format(self):
+    def format(self, prev):
+
+        buf = b''
+
+        # delta encode timestamp
+        if prev:
+            timestamp = codec.delta_encode(self.timestamp, prev)
+            buf += codec.varint_encode(timestamp)
+        else:
+            buf += struct.pack(self.timestamp, 'i')
 
         bids += b''
         for i in range(0, len(self.bids)):
-            packed = struct.pack('i' * len(self.bids[i]) , *self.bids[i])
+            packed = struct.pack('i' * len(self.bids[i]), *self.bids[i])
             bids += packed
- 
+
         asks += b''
         for i in range(0, len(self.asks)):
-            packed = struct.pack('i' * len(self.asks[i]) , *self.asks[i])
+            packed = struct.pack('i' * len(self.asks[i]), *self.asks[i])
             asks += packed
 
-        return 'timestamp:{};bids:{};asks:{}\n'.format(self.timestamp, ','.join(bids), ','.join(asks)).encode()
+        return buf
+
 
 class Trade:
     def __init__(self, object: dict):
@@ -43,8 +55,47 @@ class Trade:
         self.side: str = object.get('side')
         self.timestamp: int = object.get('timestamp') or int(time.time() * 1000)
 
-    def format(self):
-        return 'id:{};price:{};amount:{};side:{};timestamp:{}\n'.format(self.id, self.price, self.amount, self.side, self.timestamp).encode()
+    def format(self, prev=None):
+
+        buf = b''
+
+        buf += codec.varint_encode(
+            1) if self.side == 'buy' else codec.varint_encode(0)
+
+        # delta encode id
+        if prev:
+            id = codec.delta_encode(self.id, prev)
+            buf += codec.varint_encode(id)
+        else:
+            buf += struct.pack(self.id, 'i')
+
+        # delta encode timestamp
+        if prev:
+            timestamp = codec.delta_encode(self.timestamp, prev)
+            buf += codec.varint_encode(timestamp)
+        else:
+            buf += struct.pack(self.timestamp, 'i')
+
+        # delta / zigzag encode price
+        self.price = codec.encode_factorize(self.price, precision)
+        if prev:
+            price = codec.delta_encode(self.price, prev)
+            price = codec.varint_encode(price)
+            buf += codec.zigzag_encode(price)
+        else:
+            buf += struct.pack(self.price, 'i')
+
+        # delta / zigzag encode amount
+        self.amount = codec.encode_factorize(self.amount, precision)
+        if prev:
+            amount = codec.delta_encode(self.amount, prev)
+            amount = codec.varint_encode(amount)
+            buf += codec.zigzag_encode(amount)
+        else:
+            buf += struct.pack(self.amount, 'i')
+
+        return buf
+
 
 def program_time():
     try:
@@ -54,13 +105,16 @@ def program_time():
     except (TypeError, OverflowError, OSError):
         return None
 
+
 def ymd(timestamp):
     utc_datetime = datetime.utcfromtimestamp(int(round(timestamp / 1000)))
     return utc_datetime.strftime('%Y-%m-%d')
 
+
 def seconds_until_midnight():
     n = datetime.utcnow()
     return ((24 - n.hour - 1) * 60 * 60) + ((60 - n.minute - 1) * 60) + (60 - n.second)
+
 
 def directory_size(path):
 
@@ -73,11 +127,13 @@ def directory_size(path):
                 total += directory_size(entry.path)
     return total
 
+
 async def watch_storage_space():
 
     while True:
         await sleep(seconds_until_midnight())
         send_sms(f'Storage capacity at {directory_size(DIRECTORY) / (1000**3)}')
+
 
 def save_data(id, path, data):
 
@@ -95,6 +151,7 @@ def save_data(id, path, data):
 
         send_sms('{}\n\nProblem saving file'.format(program_time()))
         raise e
+
 
 async def symbol_loop(exchange, method, symbol, path):
 
@@ -116,21 +173,24 @@ async def symbol_loop(exchange, method, symbol, path):
 
             if type(e).__name__ == 'NetworkError':
 
-                logging.warning('{} - symbol loop - {}'.format(exchange.id, str(e)))
+                logging.warning(
+                    '{} - symbol loop - {}'.format(exchange.id, str(e)))
 
             if type(e).__name__ == 'ExchangeError' or type(e).__name__ == 'Exception':
 
-                logging.error('{} - symbol loop - {}'.format(exchange.id, str(e)))
-                send_sms('{}\n\nProblem watching {} {}'.format(program_time(), exchange.id, method))
+                logging.error(
+                    '{} - symbol loop - {}'.format(exchange.id, str(e)))
+                send_sms('{}\n\nProblem watching {} {}'.format(
+                    program_time(), exchange.id, method))
 
                 raise e
 
             await exchange.sleep(5000)
-            
+
 
 async def method_loop(exchange, method, symbols, path):
 
-    directory = { 'watchOrderBook': 'order_book', 'watchTrades': 'trades' }
+    directory = {'watchOrderBook': 'order_book', 'watchTrades': 'trades'}
 
     path = os.path.join(path, directory[method])
     if not os.path.exists(path):
@@ -140,7 +200,7 @@ async def method_loop(exchange, method, symbols, path):
     await gather(*loops)
 
 
-async def exchange_loop(exchange_id, methods, path, config = {}):
+async def exchange_loop(exchange_id, methods, path, config={}):
 
     path = os.path.join(path, exchange_id)
     if not os.path.exists(path):
@@ -154,9 +214,11 @@ async def exchange_loop(exchange_id, methods, path, config = {}):
 
         setattr(exchange, attr, value)
 
-    loops = [method_loop(exchange, method, symbols, path) for method, symbols in methods.items()]
+    loops = [method_loop(exchange, method, symbols, path)
+             for method, symbols in methods.items()]
     await gather(*loops)
     await exchange.close()
+
 
 async def main():
 
@@ -166,9 +228,9 @@ async def main():
 
     config = {
         'okx': {
-            'options': { 
-                'rateLimit': 10, 
-                'watchOrderBook': { 'depth': 'books' }
+            'options': {
+                'rateLimit': 10,
+                'watchOrderBook': {'depth': 'books'}
             }
         }
     }
@@ -180,10 +242,9 @@ async def main():
         }
     }
 
-    loops = [exchange_loop(exchange_id, methods, save_path, config.get(exchange_id, {})) for exchange_id, methods in exchanges.items()]
+    loops = [exchange_loop(exchange_id, methods, save_path, config.get(
+        exchange_id, {})) for exchange_id, methods in exchanges.items()]
     loops.append(watch_storage_space())
     await gather(*loops)
-    
+
 run(main())
-
-

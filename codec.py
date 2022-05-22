@@ -1,5 +1,9 @@
+from ctypes import c_uint32 as unsigned_int32, c_uint8 as unsigned_byte
+import time
 import io
 import struct
+import json
+import os
 
 
 def zigzag_encode(n):
@@ -50,36 +54,62 @@ def _read_one(stream):
     return ord(c)
 
 
-def delta_encode(n1, n2):
+def delta_encode(n2, n1):
     return n2 - n1
 
 
-def delta_decode(n1, n2):
+def delta_decode(n2, n1):
     return n2 + n1
 
 
-def encode(n1, n2):
+def encode(current, previous=None):
 
-    if isinstance(n1, float):
-        n1 = encode_factorize(n1)
+    current = encode_factorize(current, 2)
+    if previous:
+        previous = factorize_encode(previous, 2)
+        current = delta_encode(current, previous)
 
-    delta = delta_encode(n1, n2)
-    if delta <= 2**8:
-        n1 = varint_encode(delta)
-        n1 = zigzag_encode(n1)
-    else:
-        n1 = struct.pack('i', n1)
+    current = zigzag_encode(current)
+    current = varint_encode(current)
 
-    return n1
+    return current
 
 
-def decode(n1, n2):
-    pass
+def decode(current, previous):
+
+    current = varint_decode(current)
+    current = zigzag_decode(current)
+
+    if previous:
+        current = delta_decode(current, previous)
+
+    current = factorize_decode(current, 2)
+    return current
 
 
-def encode_factorize(n, precision):
-    return int(n**precision)
+def factorize_encode(n, precision):
+    return int(n * 10**precision)
 
 
-def decode_factorize(n, precision):
-    return n / precision
+def factorize_decode(n, precision):
+    return float(n) / 10**precision
+
+
+# use up to 4 bytes to represent any given number
+# numbers <= 2**20 use varint, else regular bytes
+# factorize -> delta -> zigzag -> varints
+
+# current, previous = 20000, 40000
+# current = encode(current, previous)
+# print(len(current))
+
+# previous = encode_factorize(previous, 2)  # TEMP
+# current = decode(current, previous)
+# print(current)
+
+num, bits = -110, 32
+msb = 1 << (bits - 1)
+
+print(msb & num)
+
+print(bin(unsigned_byte(num).value >> 1), bin(num))

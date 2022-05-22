@@ -62,37 +62,10 @@ class Trade:
         buf += codec.varint_encode(
             1) if self.side == 'buy' else codec.varint_encode(0)
 
-        # delta encode id
-        if prev:
-            id = codec.delta_encode(self.id, prev)
-            buf += codec.varint_encode(id)
-        else:
-            buf += struct.pack(self.id, 'i')
-
-        # delta encode timestamp
-        if prev:
-            timestamp = codec.delta_encode(self.timestamp, prev)
-            buf += codec.varint_encode(timestamp)
-        else:
-            buf += struct.pack(self.timestamp, 'i')
-
-        # delta / zigzag encode price
-        self.price = codec.encode_factorize(self.price, precision)
-        if prev:
-            price = codec.delta_encode(self.price, prev)
-            price = codec.varint_encode(price)
-            buf += codec.zigzag_encode(price)
-        else:
-            buf += struct.pack(self.price, 'i')
-
-        # delta / zigzag encode amount
-        self.amount = codec.encode_factorize(self.amount, precision)
-        if prev:
-            amount = codec.delta_encode(self.amount, prev)
-            amount = codec.varint_encode(amount)
-            buf += codec.zigzag_encode(amount)
-        else:
-            buf += struct.pack(self.amount, 'i')
+        buf += codex.encode(self.id)
+        buf += codex.encode(self.timestamp)
+        buf += codex.encode(self.price)
+        buf += codex.encode(self.amount)
 
         return buf
 

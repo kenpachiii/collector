@@ -136,33 +136,16 @@ class Trade:
 
 # np.argwhere(int(trade.timestamp) >= order_book_keys)
 
-order_book_ts = []
-trade_ts = []
+import pandas as pd
+import lzma
 
-for i in range(0, 1000):
-    order_book_ts.append(random.randint(int(time.time()), int(time.time()) + 86400 * 7))
-    trade_ts.append(random.randint(int(time.time()), int(time.time()) + 86400 * 7))
-
-order_book_ts.sort()
-trade_ts.sort()
-
-order_book_ts = order_book_ts[::-1]
-trade_ts = trade_ts[::-1]
+file = './data/okx/trades/BTC-USD-BTC/2022-05-29.xz'
 
 start = time.time() * 1000
 
-trade = trade_ts.pop(0)
+df = pd.read_json('./data/okx/trades/BTC-USD-BTC/2022-05-29.xz', lines = True)
+print(df)
 
 
-for i in range(0, len(order_book_ts)):
-
-    ts = order_book_ts[i]
-    while ts <= trade:
-
-        if len(trade_ts) > 0:
-            trade = trade_ts.pop(0)
-
-        if len(trade_ts) == 0:
-            break
 
 print('completed in {} ms'.format((time.time() * 1000) - start))

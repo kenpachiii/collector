@@ -16,7 +16,7 @@ from sms import send_sms
 FORMAT = '%(asctime)s - %(levelname)s - %(message)s'
 logging.basicConfig(format=FORMAT, level=logging.INFO)
 
-DIRECTORY = '/mnt/volume_ams3_01/'
+DIRECTORY = './data'
 
 class OrderBook:
     def __init__(self, object: dict):
@@ -25,7 +25,7 @@ class OrderBook:
         self.timestamp: int = object.get('timestamp') or int(time.time() * 1000)
 
     def format(self):
-        return json.dumps(vars(self)).encode()
+        return json.dumps(vars(self)).encode() + b'\n'
 
 
 class Trade:
@@ -39,7 +39,7 @@ class Trade:
         self.bid_ask_spread: float = 0
 
     def format(self):
-        return json.dumps(vars(self)).encode()
+        return json.dumps(vars(self)).encode() + b'\n'
 
 
 def program_time():
@@ -97,7 +97,7 @@ def save_data(id, path, data):
         raise e
 
 
-order_book_ts = []
+order_book_ts = [[0, 0]]
 
 async def symbol_loop(exchange, method, symbol: str, path):
 
@@ -134,6 +134,7 @@ async def symbol_loop(exchange, method, symbol: str, path):
                 exchange.trades[symbol].clear()
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
+            print(e)
 
             if type(e).__name__ == 'NetworkError':
 

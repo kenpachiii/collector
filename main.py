@@ -118,7 +118,7 @@ async def symbol_loop(exchange, method, symbol: str, path):
 
                 order_book_ts.append([int(response.timestamp), abs(response.asks[0][0] - response.bids[0][0])])
 
-                save_data(exchange.id, path, response)
+                # save_data(exchange.id, path, response)
             elif method == 'watchTrades':
                 for item in response:
                     item = Trade(item)
@@ -197,8 +197,8 @@ async def main():
 
     exchanges = {
         'okx': {
-            'watchOrderBook': ['BTC/USD:BTC'],
-            'watchTrades': ['BTC/USD:BTC'],
+            'watchOrderBook': ['BTC/USD:BTC', 'BTC/USDT:USDT'],
+            'watchTrades': ['BTC/USD:BTC', 'BTC/USDT:USDT'],
         }
     }
 

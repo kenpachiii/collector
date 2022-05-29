@@ -139,13 +139,19 @@ class Trade:
 import pandas as pd
 import lzma
 
-file = './data/okx/trades/BTC-USD-BTC/2022-05-29.xz'
+file = './data/okx/order_book/BTC-USD-BTC/2022-05-29.xz'
 
-start = time.time() * 1000
+# trade = b'{"id": 187665684, "price": 29463.7, "amount": 1.0, "side": "sell", "timestamp": 1653867140763, "bid_ask_spread": 0.09999999999854481}' + b'\n'
 
-df = pd.read_json('./data/okx/trades/BTC-USD-BTC/2022-05-29.xz', lines = True)
-print(df)
+# xz = lzma.open(file, 'ab')
+# for i in range(0, 1000000):
+#     xz.write(trade)
 
+# xz.close()
 
+# start = time.time() * 1000
 
-print('completed in {} ms'.format((time.time() * 1000) - start))
+# df = pd.read_json('./data/okx/trades/BTC-USD-BTC/2022-05-29.xz', lines = True)
+# print(df.memory_usage())
+
+# print('completed in {} ms'.format((time.time() * 1000) - start))

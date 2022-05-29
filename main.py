@@ -6,6 +6,8 @@ import datetime
 import logging
 import struct
 import codec
+import json
+import numpy as np
 
 from datetime import datetime
 from asyncio import gather, run, sleep
@@ -16,58 +18,28 @@ logging.basicConfig(format=FORMAT, level=logging.INFO)
 
 DIRECTORY = '/mnt/volume_ams3_01/'
 
-
 class OrderBook:
     def __init__(self, object: dict):
         self.bids: list = object.get('bids').copy()
         self.asks: list = object.get('asks').copy()
         self.timestamp: int = object.get('timestamp') or int(time.time() * 1000)
 
-    def format(self, prev):
-
-        buf = b''
-
-        # delta encode timestamp
-        if prev:
-            timestamp = codec.delta_encode(self.timestamp, prev)
-            buf += codec.varint_encode(timestamp)
-        else:
-            buf += struct.pack(self.timestamp, 'i')
-
-        bids += b''
-        for i in range(0, len(self.bids)):
-            packed = struct.pack('i' * len(self.bids[i]), *self.bids[i])
-            bids += packed
-
-        asks += b''
-        for i in range(0, len(self.asks)):
-            packed = struct.pack('i' * len(self.asks[i]), *self.asks[i])
-            asks += packed
-
-        return buf
+    def format(self):
+        return json.dumps(vars(self)).encode()
 
 
 class Trade:
     def __init__(self, object: dict):
-        self.id: str = object.get('id')
+        self.id: int = int(object.get('id'))
         self.price: float = object.get('price')
         self.amount: float = object.get('amount')
         self.side: str = object.get('side')
         self.timestamp: int = object.get('timestamp') or int(time.time() * 1000)
 
-    def format(self, prev=None):
+        self.bid_ask_spread: float = 0
 
-        buf = b''
-
-        buf += codec.varint_encode(
-            1) if self.side == 'buy' else codec.varint_encode(0)
-
-        buf += codex.encode(self.id)
-        buf += codex.encode(self.timestamp)
-        buf += codex.encode(self.price)
-        buf += codex.encode(self.amount)
-
-        return buf
+    def format(self):
+        return json.dumps(vars(self)).encode()
 
 
 def program_time():
@@ -113,7 +85,7 @@ def save_data(id, path, data):
     try:
 
         timestamp = data.timestamp
-        filename = '.'.join([os.path.join(path, ymd(timestamp)), 'lzma'])
+        filename = '.'.join([os.path.join(path, ymd(timestamp)), 'xz'])
 
         with lzma.open(filename, 'ab') as f:
             f.write(data.format())
@@ -121,12 +93,19 @@ def save_data(id, path, data):
 
     except Exception as e:
         logging.error('{} - save data - {}'.format(id, str(e)))
-
         send_sms('{}\n\nProblem saving file'.format(program_time()))
         raise e
 
 
-async def symbol_loop(exchange, method, symbol, path):
+order_book_ts = []
+
+async def symbol_loop(exchange, method, symbol: str, path):
+
+    path = os.path.join(path, symbol.replace('/', '-').replace(':', '-'))
+    if not os.path.exists(path):
+        os.mkdir(path)
+
+    global order_book_ts
 
     logging.info('Starting {} {} {}'.format(exchange.id, method, symbol))
 
@@ -135,26 +114,35 @@ async def symbol_loop(exchange, method, symbol, path):
         try:
             response = await getattr(exchange, method)(symbol)
             if method == 'watchOrderBook':
-                save_data(exchange.id, path, OrderBook(response))
-            elif method == 'watchTrades':
+                response = OrderBook(response)
 
+                order_book_ts.append([int(response.timestamp), abs(response.asks[0][0] - response.bids[0][0])])
+
+                save_data(exchange.id, path, response)
+            elif method == 'watchTrades':
                 for item in response:
-                    save_data(exchange.id, path, Trade(item))
+                    item = Trade(item)
+
+                    # get bid ask spread
+                    index = np.argwhere(int(item.timestamp) >= np.asarray(order_book_ts)[:, 0])
+                    item.bid_ask_spread = order_book_ts[index[-1][0]][1] 
+
+                    # drop old order books
+                    order_book_ts = order_book_ts[index[-1][0]:]
+
+                    save_data(exchange.id, path, item)
                 exchange.trades[symbol].clear()
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
 
             if type(e).__name__ == 'NetworkError':
 
-                logging.warning(
-                    '{} - symbol loop - {}'.format(exchange.id, str(e)))
+                logging.warning('{} - symbol loop - {}'.format(exchange.id, str(e)))
 
             if type(e).__name__ == 'ExchangeError' or type(e).__name__ == 'Exception':
 
-                logging.error(
-                    '{} - symbol loop - {}'.format(exchange.id, str(e)))
-                send_sms('{}\n\nProblem watching {} {}'.format(
-                    program_time(), exchange.id, method))
+                logging.error('{} - symbol loop - {}'.format(exchange.id, str(e)))
+                send_sms('{}\n\nProblem watching {} {}'.format(program_time(), exchange.id, method))
 
                 raise e
 
@@ -187,8 +175,7 @@ async def exchange_loop(exchange_id, methods, path, config={}):
 
         setattr(exchange, attr, value)
 
-    loops = [method_loop(exchange, method, symbols, path)
-             for method, symbols in methods.items()]
+    loops = [method_loop(exchange, method, symbols, path) for method, symbols in methods.items()]
     await gather(*loops)
     await exchange.close()
 
@@ -210,8 +197,8 @@ async def main():
 
     exchanges = {
         'okx': {
-            'watchOrderBook': ['BTC/USDT:USDT'],
-            'watchTrades': ['BTC/USDT:USDT'],
+            'watchOrderBook': ['BTC/USD:BTC'],
+            'watchTrades': ['BTC/USD:BTC'],
         }
     }
 

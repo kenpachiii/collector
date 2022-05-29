@@ -5,18 +5,14 @@ import struct
 import json
 import os
 
-
 def zigzag_encode(n):
     return (n >> 31) ^ (n << 1)
-
 
 def zigzag_decode(n):
     return (n >> 1) ^ -(n & 1)
 
-
 def _byte(b):
-    return chr(b)
-
+    return bytes((b, ))
 
 def varint_encode(number):
     buf = b''
@@ -28,24 +24,29 @@ def varint_encode(number):
         else:
             buf += _byte(towrite)
             break
-    return buf
 
+    return buf 
 
 def varint_decode_stream(stream):
     shift = 0
     result = 0
     while True:
-        i = _read_one(stream)
+        i = _read_one(stream)  
+
         result |= (i & 0x7f) << shift
         shift += 7
         if not (i & 0x80):
             break
+
     return result
 
+def from_twos_complement(unsigned):
+    sign_mask = 1 << ((unsigned).bit_length() - 1)  
+    bits_mask = sign_mask - 1        
+    return (unsigned & bits_mask) - (unsigned & sign_mask)
 
 def varint_decode(buf):
     return varint_decode_stream(io.BytesIO(buf))
-
 
 def _read_one(stream):
     c = stream.read(1)
@@ -53,18 +54,16 @@ def _read_one(stream):
         raise EOFError('EOF')
     return ord(c)
 
-
-def delta_encode(n2, n1):
+def delta_encode(n2, n1 = 0):
     return n2 - n1
 
-
-def delta_decode(n2, n1):
+def delta_decode(n2, n1 = 0):
     return n2 + n1
 
+def encode(current, previous = None):
 
-def encode(current, previous=None):
-
-    current = encode_factorize(current, 2)
+    current = factorize_encode(current, 2)
+    
     if previous:
         previous = factorize_encode(previous, 2)
         current = delta_encode(current, previous)
@@ -74,8 +73,7 @@ def encode(current, previous=None):
 
     return current
 
-
-def decode(current, previous):
+def decode(current, previous = None):
 
     current = varint_decode(current)
     current = zigzag_decode(current)
@@ -86,30 +84,26 @@ def decode(current, previous):
     current = factorize_decode(current, 2)
     return current
 
-
 def factorize_encode(n, precision):
     return int(n * 10**precision)
-
 
 def factorize_decode(n, precision):
     return float(n) / 10**precision
 
+# current, previous = 40000, 20000
 
-# use up to 4 bytes to represent any given number
-# numbers <= 2**20 use varint, else regular bytes
-# factorize -> delta -> zigzag -> varints
+# print(len(struct.pack('i', current)))
 
-# current, previous = 20000, 40000
 # current = encode(current, previous)
-# print(len(current))
+# print(current.bit_length() / 8)
 
-# previous = encode_factorize(previous, 2)  # TEMP
+# previous = factorize_encode(previous, 2)  # TEMP
 # current = decode(current, previous)
 # print(current)
 
-num, bits = -110, 32
-msb = 1 << (bits - 1)
 
-print(msb & num)
 
-print(bin(unsigned_byte(num).value >> 1), bin(num))
+
+
+
+

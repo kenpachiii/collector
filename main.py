@@ -16,7 +16,7 @@ from sms import send_sms
 FORMAT = '%(asctime)s - %(levelname)s - %(message)s'
 logging.basicConfig(format=FORMAT, level=logging.INFO)
 
-DIRECTORY = './data'
+DIRECTORY = '/mnt/volume_ams3_01/'
 
 class OrderBook:
     def __init__(self, object: dict):
@@ -134,7 +134,6 @@ async def symbol_loop(exchange, method, symbol: str, path):
                 exchange.trades[symbol].clear()
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
-            print(e)
 
             if type(e).__name__ == 'NetworkError':
 

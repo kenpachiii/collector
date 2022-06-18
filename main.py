@@ -7,6 +7,7 @@ import json
 import csv
 import glob
 import lzma
+import argparse
 
 from datetime import datetime
 from asyncio import gather, run, sleep, create_task
@@ -15,7 +16,7 @@ from sms import send_sms
 FORMAT = '%(asctime)s - %(levelname)s - %(message)s'
 logging.basicConfig(format=FORMAT, level=logging.INFO)
 
-DIRECTORY = '/mnt/volume_ams3_01/'
+DIRECTORY = None
 
 class OrderBook:
     def __init__(self, object: dict):
@@ -182,6 +183,12 @@ async def exchange_loop(exchange_id, methods, path, config={}):
     await exchange.close()
 
 async def main():
+
+    parser = argparse.ArgumentParser(description = 'exchange data collection service')
+    parser.add_argument('-d', type = str, help = 'storage directory', required = True)
+
+    args = parser.parse_args()
+    DIRECTORY = getattr(args, 'd', None)
 
     save_path = os.path.join(os.getcwd(), DIRECTORY)
     if not os.path.exists(save_path):

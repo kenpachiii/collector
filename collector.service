@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 WorkingDirectory=%h/collector
-ExecStart=/usr/bin/python3 main.py 
+ExecStart=/usr/bin/python3 main.py -d /mnt/volume_ams3_01/
 Restart=on-failure
 RestartSec=5s
 

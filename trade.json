@@ -1,4 +1,0 @@
-[
-  { "info": { "instId": "BTC-USDT-SWAP", "tradeId": "308062435", "px": "29226.7", "sz": "1", "side": "buy", "ts": "1653839666405" }, "timestamp": 1653839666405, "datetime": "2022-05-29T15:54:26.405Z", "symbol": "BTC/USDT:USDT", "id": "308062435", "order": "None", "type": "None", "takerOrMaker": "None", "side": "buy", "price": 29226.7, "amount": 1.0, "cost": 292.267, "fee": "None", "fees": [] },
-  { "info": { "instId": "BTC-USDT-SWAP", "tradeId": "308068891", "px": "29255.1", "sz": "1", "side": "buy", "ts": "1653841023363" }, "timestamp": 1653841023363, "datetime": "2022-05-29T16:17:03.363Z", "symbol": "BTC/USDT:USDT", "id": "308068891", "order": "None", "type": "None", "takerOrMaker": "None", "side": "buy", "price": 29255.1, "amount": 1.0, "cost": 292.551, "fee": "None", "fees": [] }
-]

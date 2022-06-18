@@ -1,16 +1,15 @@
 import os
 import ccxtpro
-import lzma
 import time
 import datetime
 import logging
-import struct
-import codec
 import json
-import numpy as np
+import csv
+import glob
+import lzma
 
 from datetime import datetime
-from asyncio import gather, run, sleep
+from asyncio import gather, run, sleep, create_task
 from sms import send_sms
 
 FORMAT = '%(asctime)s - %(levelname)s - %(message)s'
@@ -27,7 +26,6 @@ class OrderBook:
     def format(self):
         return json.dumps(vars(self)).encode() + b'\n'
 
-
 class Trade:
     def __init__(self, object: dict):
         self.id: int = int(object.get('id'))
@@ -36,11 +34,8 @@ class Trade:
         self.side: str = object.get('side')
         self.timestamp: int = object.get('timestamp') or int(time.time() * 1000)
 
-        self.bid_ask_spread: float = 0
-
     def format(self):
         return json.dumps(vars(self)).encode() + b'\n'
-
 
 def program_time():
     try:
@@ -50,16 +45,13 @@ def program_time():
     except (TypeError, OverflowError, OSError):
         return None
 
-
 def ymd(timestamp):
     utc_datetime = datetime.utcfromtimestamp(int(round(timestamp / 1000)))
     return utc_datetime.strftime('%Y-%m-%d')
 
-
 def seconds_until_midnight():
     n = datetime.utcnow()
     return ((24 - n.hour - 1) * 60 * 60) + ((60 - n.minute - 1) * 60) + (60 - n.second)
-
 
 def directory_size(path):
 
@@ -72,65 +64,76 @@ def directory_size(path):
                 total += directory_size(entry.path)
     return total
 
-
 async def watch_storage_space():
 
     while True:
         await sleep(seconds_until_midnight())
         send_sms(f'Storage capacity at {directory_size(DIRECTORY) / (1000**3)}')
 
+async def archive_data(path):
 
-def save_data(id, path, data):
+    while True:
+        await sleep(seconds_until_midnight())
+
+        files = glob.glob(os.path.join(path, '*.csv'))
+        files.sort()
+
+        if len(files) < 4:
+            continue
+
+        file = files.pop()
+        with open(file, 'rb') as csvfile:
+            with lzma.open(file.replace('csv', 'xz'), 'wb') as xz:
+                xz.write(csvfile.read())
+
+        os.unlink(file)
+
+def save_data(id, path, row):
 
     try:
 
-        timestamp = data.timestamp
-        filename = '.'.join([os.path.join(path, ymd(timestamp)), 'xz'])
+        timestamp = row.get('timestamp')
+        filename = '.'.join([os.path.join(path, ymd(timestamp)), 'csv'])
 
-        with lzma.open(filename, 'ab') as f:
-            f.write(data.format())
-            f.close()
+        with open(filename, 'a', newline='') as csvfile:
+
+            fieldnames = ['id', 'side', 'amount', 'price', 'timestamp']
+            writer = csv.DictWriter(csvfile, fieldnames = fieldnames)
+
+            writer.writerow(row)
 
     except Exception as e:
         logging.error('{} - save data - {}'.format(id, str(e)))
         send_sms('{}\n\nProblem saving file'.format(program_time()))
         raise e
 
-
-order_book_ts = [[0, 0]]
-
 async def symbol_loop(exchange, method, symbol: str, path):
 
-    path = os.path.join(path, symbol.replace('/', '-').replace(':', '-'))
+    symbol = exchange.market_id(symbol)
+
+    path = os.path.join(path, symbol)
     if not os.path.exists(path):
         os.mkdir(path)
 
-    global order_book_ts
-
     logging.info('Starting {} {} {}'.format(exchange.id, method, symbol))
+
+    create_task(archive_data(path))
 
     while True:
 
         try:
             response = await getattr(exchange, method)(symbol)
             if method == 'watchOrderBook':
-                response = OrderBook(response)
-
-                order_book_ts.append([int(response.timestamp), abs(response.asks[0][0] - response.bids[0][0])])
-
+                pass
                 # save_data(exchange.id, path, response)
             elif method == 'watchTrades':
                 for item in response:
-                    item = Trade(item)
 
-                    # get bid ask spread
-                    index = np.argwhere(int(item.timestamp) >= np.asarray(order_book_ts)[:, 0])
-                    item.bid_ask_spread = order_book_ts[index[-1][0]][1] 
+                    side = 'BUY' if item.get('side') == 'buy' else 'SELL'
+                    timestamp = int(item.get('timestamp'))
+                    
+                    save_data(exchange.id, path, {'id': item.get('id'), 'side': side, 'amount': item.get('amount'), 'price': item.get('price'), 'timestamp': timestamp})
 
-                    # drop old order books
-                    order_book_ts = order_book_ts[index[-1][0]:]
-
-                    save_data(exchange.id, path, item)
                 exchange.trades[symbol].clear()
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
@@ -145,9 +148,6 @@ async def symbol_loop(exchange, method, symbol: str, path):
                 send_sms('{}\n\nProblem watching {} {}'.format(program_time(), exchange.id, method))
 
                 raise e
-
-            await exchange.sleep(5000)
-
 
 async def method_loop(exchange, method, symbols, path):
 
@@ -175,10 +175,11 @@ async def exchange_loop(exchange_id, methods, path, config={}):
 
         setattr(exchange, attr, value)
 
+    await exchange.load_markets(reload = False)
+
     loops = [method_loop(exchange, method, symbols, path) for method, symbols in methods.items()]
     await gather(*loops)
     await exchange.close()
-
 
 async def main():
 
@@ -197,8 +198,8 @@ async def main():
 
     exchanges = {
         'okx': {
-            'watchOrderBook': ['BTC/USD:BTC', 'BTC/USDT:USDT'],
-            'watchTrades': ['BTC/USD:BTC', 'BTC/USDT:USDT'],
+            # 'watchOrderBook': ['BTC/USD:BTC', 'BTC/USDT:USDT'],
+            'watchTrades': ['BTC/USDT:USDT', 'BTC/USD:BTC'],
         }
     }
 

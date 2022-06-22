@@ -82,7 +82,7 @@ async def archive_data(path):
         if len(files) < 4:
             continue
 
-        file = files.pop()
+        file = files.pop(0)
         with open(file, 'rb') as csvfile:
             with lzma.open(file.replace('csv', 'xz'), 'wb') as xz:
                 xz.write(csvfile.read())
@@ -103,7 +103,12 @@ def save_data(id, path, row):
 
             writer.writerow(row)
 
+            if not os.path.exists(filename):
+                with open(os.path.join(path, 'index'), 'a') as file:
+                    file.write(f'{os.path.basename(filename)}\n')
+
     except Exception as e:
+        print(e)
         logging.error('{} - save data - {}'.format(id, str(e)))
         send_sms('{}\n\nProblem saving file'.format(program_time()))
         raise e

@@ -71,6 +71,17 @@ async def watch_storage_space():
         await sleep(seconds_until_midnight())
         send_sms(f'Storage capacity at {directory_size(DIRECTORY) / (1000**3)}')
 
+def adjust_index(file):
+
+    path = os.path.dirname(file)
+    index_file = os.path.join(path, 'index')
+    xz_file = '.'.join([file, 'xz'])
+
+    with open(index_file, 'r') as reader:
+        if xz_file not in reader.read().splitlines():
+            with open(index_file, 'a') as writer:
+                writer.write(f'{os.path.basename(xz_file)}\n')
+
 async def archive_data(path):
 
     while True:
@@ -79,15 +90,17 @@ async def archive_data(path):
         files = glob.glob(os.path.join(path, '*.csv'))
         files.sort()
 
-        if len(files) < 4:
-            continue
+        files.remove(ymd(time.time() * 1000) + '.csv')
 
-        file = files.pop(0)
-        with open(file, 'rb') as csvfile:
-            with lzma.open(file.replace('csv', 'xz'), 'wb') as xz:
-                xz.write(csvfile.read())
+        for file in files:
 
-        os.unlink(file)
+            with open(file, 'rb') as csvfile:
+                with lzma.open('.'.join([file, 'xz']), 'wb') as xz:
+                    xz.write(csvfile.read())
+
+                adjust_index(file)
+
+            os.unlink(file)
 
 def save_data(id, path, row):
 
@@ -103,12 +116,7 @@ def save_data(id, path, row):
 
             writer.writerow(row)
 
-            if not os.path.exists(filename):
-                with open(os.path.join(path, 'index'), 'a') as file:
-                    file.write(f'{os.path.basename(filename)}\n')
-
     except Exception as e:
-        print(e)
         logging.error('{} - save data - {}'.format(id, str(e)))
         send_sms('{}\n\nProblem saving file'.format(program_time()))
         raise e

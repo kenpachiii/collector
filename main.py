@@ -4,13 +4,14 @@ import time
 import datetime
 import logging
 import json
-import csv
 import glob
 import lzma
 import argparse
+import requests
+import aiohttp
 
 from datetime import datetime
-from asyncio import gather, run, sleep, create_task
+from asyncio import gather, run, sleep
 from sms import send_sms
 
 FORMAT = '%(asctime)s - %(levelname)s - %(message)s'
@@ -75,46 +76,31 @@ def adjust_index(file):
 
     path = os.path.dirname(file)
     index_file = os.path.join(path, 'index')
-    xz_file = '.'.join([file, 'xz'])
 
-    with open(index_file, 'r') as reader:
-        if xz_file not in reader.read().splitlines():
-            with open(index_file, 'a') as writer:
-                writer.write(f'{os.path.basename(xz_file)}\n')
+    with open(index_file, 'a') as writer:
+        writer.write(f'{os.path.basename(file)}\n')
 
-async def archive_data(path):
+def format_row(headers = ['id', 'side', 'amount', 'price', 'timestamp'], data = None):
 
-    while True:
-        await sleep(seconds_until_midnight())
+    row = []
+    for key in headers:
+        row.append(str(data.get(key)))
 
-        files = glob.glob(os.path.join(path, '*.csv'))
-        files.sort()
-
-        files.remove(ymd(time.time() * 1000) + '.csv')
-
-        for file in files:
-
-            with open(file, 'rb') as csvfile:
-                with lzma.open('.'.join([file, 'xz']), 'wb') as xz:
-                    xz.write(csvfile.read())
-
-                adjust_index(file)
-
-            os.unlink(file)
+    return (','.join(row) + '\n').encode()
 
 def save_data(id, path, row):
 
     try:
 
         timestamp = row.get('timestamp')
-        filename = '.'.join([os.path.join(path, ymd(timestamp)), 'csv'])
+        filename = '.'.join([os.path.join(path, ymd(timestamp)), 'csv', 'xz'])
 
-        with open(filename, 'a', newline='') as csvfile:
+        files = glob.glob(os.path.join(path, '*.xz'))
+        if filename not in files:
+            adjust_index(filename)
 
-            fieldnames = ['id', 'side', 'amount', 'price', 'timestamp']
-            writer = csv.DictWriter(csvfile, fieldnames = fieldnames)
-
-            writer.writerow(row)
+        with lzma.open(filename, 'a') as xz:
+            xz.write(format_row(data = row))
 
     except Exception as e:
         logging.error('{} - save data - {}'.format(id, str(e)))
@@ -130,8 +116,6 @@ async def symbol_loop(exchange, method, symbol: str, path):
         os.mkdir(path)
 
     logging.info('Starting {} {} {}'.format(exchange.id, method, symbol))
-
-    create_task(archive_data(path))
 
     while True:
 

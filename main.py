@@ -10,34 +10,22 @@ import argparse
 import requests
 import aiohttp
 
+
 from datetime import datetime
 from asyncio import gather, run, sleep
 from sms import send_sms
+from store import Store
 
 FORMAT = '%(asctime)s - %(levelname)s - %(message)s'
 logging.basicConfig(format=FORMAT, level=logging.INFO)
 
 DIRECTORY = None
 
-class OrderBook:
-    def __init__(self, object: dict):
-        self.bids: list = object.get('bids').copy()
-        self.asks: list = object.get('asks').copy()
-        self.timestamp: int = object.get('timestamp') or int(time.time() * 1000)
+class Exchange(ccxtpro.okx):
 
-    def format(self):
-        return json.dumps(vars(self)).encode() + b'\n'
+    def on_connected(self, client, message = None):
+        logging.info('{exchange_id} Connected to {url} - {message}'.format(exchange_id=self.id, url=client.url, message=message))
 
-class Trade:
-    def __init__(self, object: dict):
-        self.id: int = int(object.get('id'))
-        self.price: float = object.get('price')
-        self.amount: float = object.get('amount')
-        self.side: str = object.get('side')
-        self.timestamp: int = object.get('timestamp') or int(time.time() * 1000)
-
-    def format(self):
-        return json.dumps(vars(self)).encode() + b'\n'
 
 def program_time():
     try:
@@ -72,41 +60,6 @@ async def watch_storage_space():
         await sleep(seconds_until_midnight())
         send_sms(f'Storage capacity at {directory_size(DIRECTORY) / (1000**3)}')
 
-def adjust_index(file):
-
-    path = os.path.dirname(file)
-    index_file = os.path.join(path, 'index')
-
-    with open(index_file, 'a') as writer:
-        writer.write(f'{os.path.basename(file)}\n')
-
-def format_row(headers = ['id', 'side', 'amount', 'price', 'timestamp'], data = None):
-
-    row = []
-    for key in headers:
-        row.append(str(data.get(key)))
-
-    return (','.join(row) + '\n').encode()
-
-def save_data(id, path, row):
-
-    try:
-
-        timestamp = row.get('timestamp')
-        filename = '.'.join([os.path.join(path, ymd(timestamp)), 'csv', 'xz'])
-
-        files = glob.glob(os.path.join(path, '*.xz'))
-        if filename not in files:
-            adjust_index(filename)
-
-        with lzma.open(filename, 'a') as xz:
-            xz.write(format_row(data = row))
-
-    except Exception as e:
-        logging.error('{} - save data - {}'.format(id, str(e)))
-        send_sms('{}\n\nProblem saving file'.format(program_time()))
-        raise e
-
 async def symbol_loop(exchange, method, symbol: str, path):
 
     symbol = exchange.market_id(symbol)
@@ -114,6 +67,8 @@ async def symbol_loop(exchange, method, symbol: str, path):
     path = os.path.join(path, symbol)
     if not os.path.exists(path):
         os.mkdir(path)
+
+    store = Store(os.path.join(path, 'store.db'))
 
     logging.info('Starting {} {} {}'.format(exchange.id, method, symbol))
 
@@ -123,15 +78,14 @@ async def symbol_loop(exchange, method, symbol: str, path):
             response = await getattr(exchange, method)(symbol)
             if method == 'watchOrderBook':
                 pass
-                # save_data(exchange.id, path, response)
             elif method == 'watchTrades':
                 for item in response:
 
                     side = 'BUY' if item.get('side') == 'buy' else 'SELL'
                     timestamp = int(item.get('timestamp'))
-                    
-                    save_data(exchange.id, path, {'id': item.get('id'), 'side': side, 'amount': item.get('amount'), 'price': item.get('price'), 'timestamp': timestamp})
 
+                    store.insert({ 'id': item.get('id'), 'side': side, 'amount': item.get('amount'), 'price': item.get('price'), 'timestamp': timestamp })
+                    
                 exchange.trades[symbol].clear()
 
         except (ccxtpro.NetworkError, ccxtpro.ExchangeError, Exception) as e:
@@ -149,7 +103,7 @@ async def symbol_loop(exchange, method, symbol: str, path):
 
 async def method_loop(exchange, method, symbols, path):
 
-    directory = {'watchOrderBook': 'order_book', 'watchTrades': 'trades'}
+    directory = { 'watchOrderBook': 'order_book', 'watchTrades': 'trades' }
 
     path = os.path.join(path, directory[method])
     if not os.path.exists(path):
@@ -165,7 +119,7 @@ async def exchange_loop(exchange_id, methods, path, config={}):
     if not os.path.exists(path):
         os.mkdir(path)
 
-    exchange = getattr(ccxtpro, exchange_id)()
+    exchange = Exchange()
     for attr, value in config.items():
         if attr == 'options':
             exchange.options.update(value)

@@ -4,12 +4,7 @@ import time
 import datetime
 import logging
 import json
-import glob
-import lzma
 import argparse
-import requests
-import aiohttp
-
 
 from datetime import datetime
 from asyncio import gather, run, sleep
